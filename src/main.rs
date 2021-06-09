@@ -234,9 +234,8 @@ fn generate_password(
         if symbol {
             m.push_str("!@#$%^&*()_+=-[]{};:'\"\\|,./~");
         }
-        m
-    }
-    .into_bytes();
+        m.into_bytes()
+    };
     // get the max
     let max = master.len() as u8;
     let and_value = {
