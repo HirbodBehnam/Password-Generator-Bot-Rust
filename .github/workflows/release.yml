@@ -23,6 +23,7 @@ jobs:
           - arm-unknown-linux-gnueabihf
     steps:
       - uses: actions/checkout@v2
+      - run: sudo apt-get install libssl-dev
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
