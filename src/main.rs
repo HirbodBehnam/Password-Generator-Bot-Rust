@@ -1,11 +1,10 @@
 use lazy_static::lazy_static;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::SystemTime;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode::MarkdownV2;
-use teloxide::types::{ReplyMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton};
-use std::collections::HashMap;
-use std::thread;
-use std::time::{Duration, SystemTime};
-use std::sync::Mutex;
+use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ReplyMarkup};
 
 /// An enum to store where the user is
 #[repr(u8)]
@@ -24,6 +23,8 @@ enum PasswordPhase {
 
 /// A struct to save
 struct User {
+    /// From when the cleaner thread must delete this entry
+    expiry_date: u64,
     /// Where the user is
     page: PasswordPhase,
     /// Length of the password
@@ -31,15 +32,10 @@ struct User {
     lowercase: bool,
     uppercase: bool,
     numbers: bool,
-    /// From when the cleaner thread must delete this entry
-    expiry_date: u64,
 }
 
 lazy_static! {
-    static ref USERS_MAP: Mutex<HashMap<i32, User>> = {
-        let m = HashMap::new();
-        Mutex::new(m)
-    };
+    static ref USERS_MAP: Mutex<HashMap<i64, User>> = Mutex::new(HashMap::new());
 }
 
 const CLEANUP_INTERVAL: u64 = 10 * 60;
@@ -49,11 +45,15 @@ const VERSION: &'static str = env!("CARGO_PKG_VERSION"); // https://stackoverflo
 #[tokio::main]
 async fn main() {
     // This thread cleans up the users
-    thread::spawn(|| {
+    tokio::spawn(async {
         loop {
-            thread::sleep(Duration::from_secs(CLEANUP_INTERVAL));
-            let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-            USERS_MAP.lock().unwrap().retain(|_, value| { // https://stackoverflow.com/a/45724688/4213397
+            tokio::time::sleep(tokio::time::Duration::from_secs(CLEANUP_INTERVAL)).await;
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            USERS_MAP.lock().unwrap().retain(|_, value| {
+                // https://stackoverflow.com/a/45724688/4213397
                 value.expiry_date < now
             });
         }
@@ -73,8 +73,10 @@ To customize your password use /password";
     // is sent to user at /password
     const PASSWORD_HELP1: &str = "Select the length of your password(1-255)";
     // is sent to user at /help
-    const PASSWORD_HELP2: &str = "Do you want your password contain lowercase characters? (a,b,c...)";
-    const PASSWORD_HELP3: &str = "Do you want your password contain uppercase characters? (A,B,C...)";
+    const PASSWORD_HELP2: &str =
+        "Do you want your password contain lowercase characters? (a,b,c...)";
+    const PASSWORD_HELP3: &str =
+        "Do you want your password contain uppercase characters? (A,B,C...)";
     const PASSWORD_HELP4: &str = "Do you want your password contain numbers characters? (1,2,3...)";
     const PASSWORD_HELP5: &str = "Do you want your password contain special characters? (!,#,%...)";
 
@@ -187,12 +189,12 @@ To customize your password use /password";
                         }
                         if keyboard { // add keyboard
                             let mut keys =
-                                ReplyKeyboardMarkup::new(vec![vec![KeyboardButton::new("Yes"), KeyboardButton::new("No")]]);
+                                KeyboardMarkup::new(vec![vec![KeyboardButton::new("Yes"), KeyboardButton::new("No")]]);
                             keys.resize_keyboard = Option::from(true);
                             msg.reply_markup =
-                                Option::from(ReplyMarkup::ReplyKeyboardMarkup(keys));
+                                Option::from(ReplyMarkup::Keyboard(keys));
                         } else {
-                            msg.reply_markup = Option::from(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::new()));
+                            msg.reply_markup = Option::from(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()));
                         }
                         msg.send().await?; // send
                     }
@@ -200,13 +202,19 @@ To customize your password use /password";
             }
             None => { message.answer(HELP_TEXT).send().await?; }
         };
-        ResponseResult::<()>::Ok(())
+        respond(())
     })
         .await;
 }
 
 /// Generates a password with given length and arguments
-fn generate_password(length: u8, lowercase: bool, uppercase: bool, number: bool, symbol: bool) -> String {
+fn generate_password(
+    length: u8,
+    lowercase: bool,
+    uppercase: bool,
+    number: bool,
+    symbol: bool,
+) -> String {
     // check valid arguments
     if !lowercase && !uppercase && !number && !symbol {
         return "Please at least choose one of the character types".to_string();
@@ -227,7 +235,8 @@ fn generate_password(length: u8, lowercase: bool, uppercase: bool, number: bool,
             m.push_str("!@#$%^&*()_+=-[]{};:'\"\\|,./~");
         }
         m
-    }.into_bytes();
+    }
+    .into_bytes();
     // get the max
     let max = master.len() as u8;
     let and_value = {
