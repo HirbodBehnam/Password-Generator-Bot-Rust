@@ -10,35 +10,18 @@ env:
 
 jobs:
   build:
-    name: Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-pc-windows-gnu
-          - i686-pc-windows-gnu
-          - i686-unknown-linux-gnu
-          - armv7-unknown-linux-gnueabihf
-          - arm-unknown-linux-gnueabihf
     steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt-get install libssl-dev
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --release --target=${{ matrix.target }}
-      - uses: actions/upload-release-asset@v1
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build
+        run: cargo build --release
+      - name: Attach build artifact to release
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_name: password-generator-bot-${{ matrix.target }}
+          asset_name: password-generator-bot-linux
           asset_path: target/release/password-generator-bot
           asset_content_type: application/octet-stream
