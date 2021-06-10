@@ -1,10 +1,10 @@
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::SystemTime;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode::MarkdownV2;
 use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ReplyMarkup};
+use tokio::sync::Mutex;
 
 /// An enum to store where the user is
 #[repr(u8)]
@@ -52,7 +52,7 @@ async fn main() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            USERS_MAP.lock().unwrap().retain(|_, value| {
+            USERS_MAP.lock().await.retain(|_, value| {
                 // https://stackoverflow.com/a/45724688/4213397
                 value.expiry_date < now
             });
@@ -113,7 +113,7 @@ To customize your password use /password";
                                 numbers: false,
                                 expiry_date: now + MAX_LIFE_TIME,
                             };
-                            USERS_MAP.lock().unwrap().insert(id, status);
+                            USERS_MAP.lock().await.insert(id, status);
                         }
                         message.answer(PASSWORD_HELP1).send().await?;
                     }
@@ -127,7 +127,7 @@ To customize your password use /password";
                         let mut keyboard = false;
                         // get user info
                         let result = {
-                            let mut m = USERS_MAP.lock().unwrap();
+                            let mut m = USERS_MAP.lock().await;
                             match m.get_mut(&message.update.from().unwrap().id) {
                                 Some(user) => {
                                     match user.page {
