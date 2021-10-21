@@ -4,10 +4,9 @@ use std::time::SystemTime;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode::MarkdownV2;
 use teloxide::types::{KeyboardButton, KeyboardMarkup, KeyboardRemove, ReplyMarkup};
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 /// An enum to store where the user is
-#[repr(u8)]
 enum PasswordPhase {
     /// User must choose length
     Length,
@@ -41,6 +40,22 @@ lazy_static! {
 const CLEANUP_INTERVAL: u64 = 10 * 60;
 const MAX_LIFE_TIME: u64 = 5 * 60;
 const VERSION: &'static str = env!("CARGO_PKG_VERSION"); // https://stackoverflow.com/a/27841363/4213397
+// Is sent to user at /help
+const HELP_TEXT: &'static str = "This bot helps you generate random passwords. I DO NOT STORE ANYTHING ON MY SERVER, you can read the source code. Also this bot uses crypto/rand to generate secure randoms for password.
+To quickly generate password use /generate , it generates a 16 letter password with combination of letters and numbers
+If you want to create a customizable password, use /password";
+// is sent to user at /start
+const START_TEXT: &'static str = "Hello and welcome to password generator bot!
+To quickly generate a password send run /generate
+To customize your password use /password";
+const ABOUT_TEXT: &'static str = const_format::formatcp!("Password Generator Bot v{}\nBy Hirbod Behnam\nSource: https://github.com/HirbodBehnam/Password-Generator-Bot-Rust", VERSION);
+// is sent to user at /password
+const PASSWORD_HELP1: &'static str = "Select the length of your password(1-255)"; 
+// is sent to user at /help
+const PASSWORD_HELP2: &'static str = "Do you want your password contain lowercase characters? (a,b,c...)";
+const PASSWORD_HELP3: &'static str ="Do you want your password contain uppercase characters? (A,B,C...)";
+const PASSWORD_HELP4: &'static str = "Do you want your password contain numbers characters? (1,2,3...)";
+const PASSWORD_HELP5: &'static str = "Do you want your password contain special characters? (!,#,%...)";
 
 #[tokio::main]
 async fn main() {
@@ -52,7 +67,7 @@ async fn main() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            USERS_MAP.lock().await.retain(|_, value| {
+            USERS_MAP.lock().retain(|_, value| {
                 // https://stackoverflow.com/a/45724688/4213397
                 value.expiry_date < now
             });
@@ -62,24 +77,6 @@ async fn main() {
 }
 
 async fn run() {
-    // Is sent to user at /help
-    const HELP_TEXT: &str = "This bot helps you generate random passwords. I DO NOT STORE ANYTHING ON MY SERVER, you can read the source code. Also this bot uses crypto/rand to generate secure randoms for password.
-To quickly generate password use /generate , it generates a 16 letter password with combination of letters and numbers
-If you want to create a customizable password, use /password";
-    // is sent to user at /start
-    const START_TEXT: &str = "Hello and welcome to password generator bot!
-To quickly generate a password send run /generate
-To customize your password use /password";
-    // is sent to user at /password
-    const PASSWORD_HELP1: &str = "Select the length of your password(1-255)";
-    // is sent to user at /help
-    const PASSWORD_HELP2: &str =
-        "Do you want your password contain lowercase characters? (a,b,c...)";
-    const PASSWORD_HELP3: &str =
-        "Do you want your password contain uppercase characters? (A,B,C...)";
-    const PASSWORD_HELP4: &str = "Do you want your password contain numbers characters? (1,2,3...)";
-    const PASSWORD_HELP5: &str = "Do you want your password contain special characters? (!,#,%...)";
-
     // create bot from environmental variables
     teloxide::enable_logging!();
     let bot = Bot::from_env();
@@ -92,7 +89,7 @@ To customize your password use /password";
                         message.answer(START_TEXT).send().await?;
                     }
                     "/about" => {
-                        message.answer(format!("Password Generator Bot v{}\nBy Hirbod Behnam\nSource: https://github.com/HirbodBehnam/Password-Generator-Bot-Rust", VERSION)).send().await?;
+                        message.answer(ABOUT_TEXT).send().await?;
                     }
                     "/generate" => {
                         let pass = generate_password(16, true, true, true, false);
@@ -113,7 +110,7 @@ To customize your password use /password";
                                 numbers: false,
                                 expiry_date: now + MAX_LIFE_TIME,
                             };
-                            USERS_MAP.lock().await.insert(id, status);
+                            USERS_MAP.lock().insert(id, status);
                         }
                         message.answer(PASSWORD_HELP1).send().await?;
                     }
@@ -127,7 +124,7 @@ To customize your password use /password";
                         let mut keyboard = false;
                         // get user info
                         let result = {
-                            let mut m = USERS_MAP.lock().await;
+                            let mut m = USERS_MAP.lock();
                             match m.get_mut(&message.update.from().unwrap().id) {
                                 Some(user) => {
                                     match user.page {
@@ -185,16 +182,15 @@ To customize your password use /password";
                         };
                         let mut msg = message.answer(result); // create the message
                         if markdown { // include markdown
-                            msg.parse_mode = Option::from(MarkdownV2);
+                            msg.parse_mode = Option::Some(MarkdownV2);
                         }
                         if keyboard { // add keyboard
                             let mut keys =
                                 KeyboardMarkup::new(vec![vec![KeyboardButton::new("Yes"), KeyboardButton::new("No")]]);
-                            keys.resize_keyboard = Option::from(true);
-                            msg.reply_markup =
-                                Option::from(ReplyMarkup::Keyboard(keys));
+                            keys.resize_keyboard = Option::Some(true);
+                            msg.reply_markup = Option::Some(ReplyMarkup::Keyboard(keys));
                         } else {
-                            msg.reply_markup = Option::from(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()));
+                            msg.reply_markup = Option::Some(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()));
                         }
                         msg.send().await?; // send
                     }
